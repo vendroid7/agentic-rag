@@ -35,6 +35,7 @@ Launch the Streamlit interface to interact with the agent:
 ```bash
 uv run streamlit run src/app.py
 ```
+Once the UI is live on your localhost, it will prompt you to securely enter your Groq API key in the sidebar. Once entered, you can start interacting with the UI immediately!
 
 ---
 
@@ -48,6 +49,7 @@ agentic-rag/
 ├── pyproject.toml              # Project dependencies (uv)
 ├── Agentic_RAG .pptx           # Presentation Deck
 ├── Evidence_agentic_rag.pdf    # Supporting Document
+├── data/                       # Pre-built FAISS and DuckDB vector store
 ├── src/
 │   ├── app.py            # Streamlit UI (Frontend)
 │   ├── config/
