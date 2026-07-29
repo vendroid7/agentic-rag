@@ -1,0 +1,20 @@
+[project]
+name = "agentic-venky"
+version = "0.1.0"
+description = "Agentic RAG over SEC 10-K filings"
+requires-python = ">=3.11"
+dependencies = [
+    "edgartools>=4.0",
+    "sentence-transformers>=3.0",
+    "langchain-text-splitters>=0.3",
+    "faiss-cpu>=1.8",
+    "rank-bm25>=0.2.2",
+    "duckdb>=1.0",
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "pydantic>=2.7",
+    "python-dotenv>=1.0",
+    "langgraph>=1.2.10",
+    "groq>=1.6.0",
+    "streamlit>=1.60.0",
+]
