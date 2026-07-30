@@ -47,8 +47,7 @@ All tunable parameters (LLM configs, retries, etc.) are centralized in `src/conf
 agentic-rag/
 ├── .env                        # Your local secrets (API keys)
 ├── pyproject.toml              # Project dependencies (uv)
-├── Agentic_RAG .pptx           # Presentation Deck
-├── Evidence_agentic_rag.pdf    # Supporting Document
+├── Agentic_RAG_PPT.pptx        # Presentation Deck
 ├── data/                       # Pre-built FAISS and DuckDB vector store
 ├── src/
 │   ├── app.py            # Streamlit UI (Frontend)
@@ -76,3 +75,7 @@ The system is built without heavy abstractions (like LangChain agents), focusing
 * **The Clarify Gate:** The agent explicitly queries the DuckDB catalog to detect vague questions. If a query matches multiple filings, it pauses execution and asks the user to clarify.
 * **Reflexive Self-Correction:** The `verify_node` actively grades retrieved chunks. If they lack the raw facts needed, it forces the agent into a retry loop to fetch better context.
 * **LLM Tiering:** Uses a small, lightning-fast model (`llama-3.1-8b`) for structured planning/verifying to save costs, and routes to a massive 70B parameter model (`llama-3.3-70b`) only for the final answer synthesis.
+
+---
+
+*Note: AI assistance was used during development to speed up boilerplate coding and generate comments to improve overall readability.*
