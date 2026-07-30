@@ -4,6 +4,14 @@ An interactive, agentic Retrieval-Augmented Generation (RAG) system. Unlike a st
 
 ---
 
+## 🌐 Live Demo
+
+The agent is fully deployed and accessible on Streamlit Community Cloud. **API keys are pre-configured in the cloud secrets**, so you can click the link and start interacting with the agent immediately!
+
+👉 **[Try the Live Demo Here](https://sec-filling-chat.streamlit.app/)**
+
+---
+
 ## 🚀 Setup & Run Instructions
 
 ### 1. Install Dependencies
