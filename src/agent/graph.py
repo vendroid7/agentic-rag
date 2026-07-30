@@ -1,7 +1,7 @@
 """Wires the five nodes into the agent loop and provides a CLI."""
 
 from langgraph.graph import StateGraph, END
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, CrossEncoder
 
 from agent.state import AgentState
 from agent.llm import LLMClient
@@ -23,11 +23,13 @@ def build_agent():
         CompiledGraph: The executable LangGraph application.
     """
     embedder = SentenceTransformer(config.DEFAULT_EMBEDDING_MODEL)
+    reranker = CrossEncoder(config.CROSS_ENCODER_MODEL)
     retriever = HybridRetriever(
         faiss_path=config.FAISS_INDEX_PATH,
         bm25_path=config.BM25_PATH,
         duckdb_path=config.DUCKDB_PATH,
         embedder=embedder,
+        reranker=reranker,
     )
     database = Database(config.DUCKDB_PATH)
     llm = LLMClient(

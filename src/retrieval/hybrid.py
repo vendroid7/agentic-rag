@@ -8,7 +8,9 @@ import faiss
 import numpy as np
 from pydantic import BaseModel, Field
 from rank_bm25 import BM25Okapi
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, CrossEncoder
+
+from config import config
 
 
 class Chunk(BaseModel):
@@ -39,7 +41,7 @@ class Chunk(BaseModel):
 
 class HybridRetriever:
 
-    def __init__(self, faiss_path: Path, bm25_path: Path, duckdb_path: Path, embedder: SentenceTransformer):
+    def __init__(self, faiss_path: Path, bm25_path: Path, duckdb_path: Path, embedder: SentenceTransformer, reranker: CrossEncoder):
         """
         Initializes the retrieval indices and embedding infrastructure.
 
@@ -48,14 +50,16 @@ class HybridRetriever:
             bm25_path (Path): Filepath to the serialized BM25 sparse index.
             duckdb_path (Path): Filepath to the DuckDB relational metadata catalog.
             embedder (SentenceTransformer): The model used for dense semantic encoding.
+            reranker (CrossEncoder): The model used for semantic reranking.
         """
         self.index = faiss.read_index(str(faiss_path))
         with open(bm25_path, "rb") as f:
             self.bm25: BM25Okapi = pickle.load(f)
         self.duckdb_path = str(duckdb_path)
         self.embedder = embedder
+        self.reranker = reranker
 
-    def search(self, query: str, company: str = None, fiscal_year: int = None, item_section: str = None, k: int = 6) -> list[Chunk]:
+    def search(self, query: str, company: str = None, fiscal_year: int = None, item_section: str = None, k: int = config.FINAL_K) -> list[Chunk]:
         """
         Executes a constrained hybrid search pipeline.
 
@@ -87,8 +91,8 @@ class HybridRetriever:
             if not ids:
                 return []
 
-            dense_ids, dense_scores = self._dense(query, ids, k)
-            sparse_ids = self._sparse(query, ids, k)
+            dense_ids, dense_scores = self._dense(query, ids, config.TOP_K_PER_ARM)
+            sparse_ids = self._sparse(query, ids, config.TOP_K_PER_ARM)
 
             merged = dense_ids | sparse_ids
             if not merged:
@@ -110,9 +114,15 @@ class HybridRetriever:
             for c in chunks:
                 if c.chunk_id in dense_ids:
                     c.found_by.append("dense")
-                    c.score = dense_scores.get(c.chunk_id, 0.0)
                 if c.chunk_id in sparse_ids:
                     c.found_by.append("sparse")
+
+            # Cross-Encoder scoring
+            pairs = [[query, c.text] for c in chunks]
+            ce_scores = self.reranker.predict(pairs)
+            
+            for c, score in zip(chunks, ce_scores):
+                c.score = float(score)
 
             chunks.sort(key=lambda c: c.score, reverse=True)
             return chunks[:k]

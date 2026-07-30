@@ -22,3 +22,7 @@ __pycache__/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Internal files
+JPM_CIB_Agentic_RAG.pptx
+PRESENTATION.md
