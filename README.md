@@ -48,6 +48,7 @@ agentic-rag/
 ├── .env                        # Your local secrets (API keys)
 ├── pyproject.toml              # Project dependencies (uv)
 ├── Agentic_RAG_PPT.pptx        # Presentation Deck
+├── Evidence.pdf                # Supporting Document (Scenario Images)
 ├── data/                       # Pre-built FAISS and DuckDB vector store
 ├── src/
 │   ├── app.py            # Streamlit UI (Frontend)
