@@ -141,12 +141,16 @@ def make_nodes(database: Database, retriever: HybridRetriever, llm: LLMClient):
         """
         all_chunks = []
         trace = []
+        
+        # Dynamically expand the search net on retries
+        current_k = config.FINAL_K * (state.retry_count + 1)
+        
         for sq in state.plan.sub_questions:
             chunks = retriever.search(
-                query=sq.text, company=sq.company, fiscal_year=sq.fiscal_year, k=config.FINAL_K
+                query=sq.text, company=sq.company, fiscal_year=sq.fiscal_year, k=current_k
             )
             all_chunks.extend(chunks)
-            trace.append(f'Retrieved {len(chunks)} chunks for "{sq.text}"')
+            trace.append(f'Retrieved {len(chunks)} chunks for "{sq.text}" (Attempt {state.retry_count + 1})')
 
         return {"contexts": all_chunks, "trace": trace}
 
