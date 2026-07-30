@@ -47,6 +47,7 @@ All tunable parameters (LLM configs, retries, etc.) are centralized in `src/conf
 agentic-rag/
 ├── .env                        # Your local secrets (API keys)
 ├── pyproject.toml              # Project dependencies (uv)
+├── requirements.txt            # Auto-generated requirements for Streamlit Cloud
 ├── Agentic_RAG_PPT.pptx        # Presentation Deck
 ├── Evidence.pdf                # Supporting Document (Scenario Images)
 ├── data/                       # Pre-built FAISS and DuckDB vector store
