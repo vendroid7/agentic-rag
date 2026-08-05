@@ -1,5 +1,5 @@
 import operator
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 from pydantic import BaseModel, Field
 from retrieval.hybrid import Chunk
 
@@ -28,16 +28,25 @@ class Plan(BaseModel):
     sub_questions: list[SubQuestion]
 
 
-class Coverage(BaseModel):
+class Decision(BaseModel):
     """
-    The verifier's binary judgement on passage relevance.
+    The agent's choice of what to do next, made after seeing retrieved passages.
+
+    Every field is a primitive on purpose: given a schema with a nested model
+    reference, the small model tends to echo the schema back instead of filling
+    it in.
 
     Attributes:
-        covered (bool): Indicates if the context sufficiently answers the query.
-        gap (str): A description of missing information if covered is False.
+        action (str): One of 'answer', 'refine', 'broaden', or 'ask_user'.
+        reason (str): One sentence explaining the choice, shown in the trace.
+        revised_queries (list[str]): Rewritten search text, one per sub-question
+            in the original order. Used by 'refine' and 'broaden'.
+        question_for_user (str): The question to put to the user, used by 'ask_user'.
     """
-    covered: bool
-    gap: str = ""
+    action: Literal["answer", "refine", "broaden", "ask_user"]
+    reason: str = ""
+    revised_queries: list[str] = Field(default_factory=list)
+    question_for_user: str = ""
 
 
 class AgentState(BaseModel):
@@ -49,7 +58,7 @@ class AgentState(BaseModel):
         plan (Optional[Plan]): The decomposed execution plan.
         contexts (list[Chunk]): The aggregated context retrieved from the vector store.
         clarification_message (Optional[str]): System prompt pausing execution for user input.
-        coverage_ok (bool): Boolean flag denoting successful retrieval validation.
+        next_action (Optional[str]): The action the decide node chose, read by the router.
         retry_count (int): Integer tracking verification loop iterations.
         final_answer (Optional[str]): The synthesized generation output.
         trace (Annotated[list[str], operator.add]): The concatenated reasoning trace log.
@@ -58,7 +67,7 @@ class AgentState(BaseModel):
     plan: Optional[Plan] = None
     contexts: list[Chunk] = Field(default_factory=list)
     clarification_message: Optional[str] = None
-    coverage_ok: bool = False
+    next_action: Optional[str] = None
     retry_count: int = 0
     final_answer: Optional[str] = None
     trace: Annotated[list[str], operator.add] = []

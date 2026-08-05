@@ -40,7 +40,7 @@ def build_agent():
         max_tokens=config.LLM_MAX_TOKENS,
     )
 
-    plan_node, clarify_node, retrieve_node, verify_node, answer_node = make_nodes(
+    plan_node, clarify_node, retrieve_node, decide_node, answer_node = make_nodes(
         database, retriever, llm
     )
 
@@ -58,29 +58,31 @@ def build_agent():
             return END
         return "retrieve"
 
-    def route_after_verify(state: AgentState) -> str:
+    def route_after_decide(state: AgentState) -> str:
         """
-        Determines the transition path following the verify node.
+        Dispatches on the action the decide node chose.
 
-        Evaluates the verification coverage flag and retry threshold to decide
-        whether to proceed to answer synthesis or trigger a retrieval retry.
+        The decision itself is made by the model inside decide_node; this router
+        only translates that choice into a graph transition.
 
         Args:
-            state (AgentState): The active state post-verification.
+            state (AgentState): The active state post-decision.
 
         Returns:
-            str: The node identifier to transition to ('answer' or 'retrieve').
+            str: The node identifier to transition to ('answer', 'retrieve', or END).
         """
-        if state.coverage_ok or state.retry_count >= config.MAX_RETRIES:
-            return "answer"
-        return "retrieve"
+        if state.next_action == "ask_user":
+            return END
+        if state.next_action == "retrieve":
+            return "retrieve"
+        return "answer"
 
     workflow = StateGraph(AgentState)
 
     workflow.add_node("plan", plan_node)
     workflow.add_node("clarify", clarify_node)
     workflow.add_node("retrieve", retrieve_node)
-    workflow.add_node("verify", verify_node)
+    workflow.add_node("decide", decide_node)
     workflow.add_node("answer", answer_node)
 
     workflow.set_entry_point("plan")
@@ -88,9 +90,11 @@ def build_agent():
     workflow.add_conditional_edges(
         "clarify", route_after_clarify, {END: END, "retrieve": "retrieve"}
     )
-    workflow.add_edge("retrieve", "verify")
+    workflow.add_edge("retrieve", "decide")
     workflow.add_conditional_edges(
-        "verify", route_after_verify, {"answer": "answer", "retrieve": "retrieve"}
+        "decide",
+        route_after_decide,
+        {"answer": "answer", "retrieve": "retrieve", END: END},
     )
     workflow.add_edge("answer", END)
 

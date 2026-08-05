@@ -1,4 +1,4 @@
-"""The five agent nodes: plan, clarify, retrieve, verify, answer.
+"""The five agent nodes: plan, clarify, retrieve, decide, answer.
 
 Each node takes the AgentState and returns a dict of only the fields it changed.
 LangGraph merges those updates into the state automatically.
@@ -6,11 +6,42 @@ LangGraph merges those updates into the state automatically.
 
 import textwrap
 
-from agent.state import AgentState, Plan, SubQuestion, Coverage
+from agent.state import AgentState, Plan, SubQuestion, Decision
 from agent.llm import LLMClient
 from config import config
 from retrieval.database import Database
 from retrieval.hybrid import HybridRetriever
+
+
+def rewrite_sub_questions(
+    old: list[SubQuestion], texts: list[str], drop_filters: bool
+) -> list[SubQuestion]:
+    """
+    Applies the model's rewritten query text to the existing retrieval targets.
+
+    One sub-question is kept per original target, so a comparison across two
+    companies cannot collapse into a single search.
+
+    Args:
+        old (list[SubQuestion]): The sub-questions from the current plan.
+        texts (list[str]): Replacement query text, positionally matched to `old`.
+            Positions the model left out keep their original text.
+        drop_filters (bool): Whether to clear the company and fiscal year
+            constraints, which is what widens an over-narrow search.
+
+    Returns:
+        list[SubQuestion]: The rewritten sub-questions to retry with.
+    """
+    rewritten = []
+    for i, sq in enumerate(old):
+        text = texts[i] if i < len(texts) else sq.text
+        if drop_filters:
+            rewritten.append(SubQuestion(text=text))
+        else:
+            rewritten.append(
+                SubQuestion(text=text, company=sq.company, fiscal_year=sq.fiscal_year)
+            )
+    return rewritten
 
 
 def make_nodes(database: Database, retriever: HybridRetriever, llm: LLMClient):
@@ -24,7 +55,7 @@ def make_nodes(database: Database, retriever: HybridRetriever, llm: LLMClient):
 
     Returns:
         tuple: A 5-tuple containing the constructed node callables:
-               (plan_node, clarify_node, retrieve_node, verify_node, answer_node)
+               (plan_node, clarify_node, retrieve_node, decide_node, answer_node)
     """
 
     catalog = database.get_all()
@@ -154,51 +185,108 @@ def make_nodes(database: Database, retriever: HybridRetriever, llm: LLMClient):
 
         return {"contexts": all_chunks, "trace": trace}
 
-    verify_instructions = textwrap.dedent("""
-        Check if the passages provide enough information to answer the question.
-        
-        CRITICAL RULE FOR COMPARISONS: If the user asks to "compare" or "synthesize" information across multiple companies, DO NOT expect the passages to contain a pre-written comparison. As long as the passages contain the raw facts for ALL the requested companies, you must set covered to true.
-        
-        Set covered to true if the passages contain the necessary ingredients.
-        If they fall short, set covered to false and say briefly what's missing.
+    decide_instructions = textwrap.dedent("""
+        You are deciding what the agent should do next, given the passages retrieved so far.
+
+        Choose exactly one action:
+        - "answer": the passages contain the raw facts needed. If the user asked to
+          compare or synthesize across companies, the facts for ALL of them being
+          present is enough — do not expect a pre-written comparison in the passages.
+        - "refine": the right filing was searched, but the wording missed the content.
+          Return revised_queries using the language a 10-K actually uses
+          (e.g. "supplier concentration" rather than "vendor risk").
+        - "broaden": the search was restricted to the wrong company or year and so
+          returned little of use. Return revised_queries; the filters are dropped
+          for you.
+        - "ask_user": the corpus cannot answer this without more input from the person.
+          Return question_for_user.
+
+        revised_queries must contain one query per sub-question, in the same order
+        as the sub-questions you were given.
+
+        Prefer "answer" when the facts are present. Only choose "ask_user" when no
+        amount of further searching would help. Explain your choice in one sentence
+        in `reason`.
     """).strip()
 
-    def verify_node(state: AgentState) -> dict:
+    def decide_node(state: AgentState) -> dict:
         """
-        Synthetically grades the relevance of the retrieved context payload.
+        Chooses the agent's next action after inspecting the retrieved passages.
+
+        This is the dynamic step in the loop: the model picks the action, while
+        the retry budget is enforced here in code so it cannot loop indefinitely.
 
         Args:
             state (AgentState): The state containing the retrieved contexts.
 
         Returns:
-            dict: An update defining 'coverage_ok' to control cyclic flow,
-                  incrementing 'retry_count' if validation fails.
+            dict: An update setting 'next_action' for the router, plus the rewritten
+                  'plan' and incremented 'retry_count' when a retry was chosen, or
+                  'clarification_message' when the agent chose to ask the user.
         """
-        if not state.contexts:
+        if state.retry_count >= config.MAX_RETRIES:
             return {
-                "coverage_ok": False,
+                "next_action": "answer",
+                "trace": ["Decide: retry budget spent — answering with what we have"],
+            }
+
+        # Nothing came back at all, so there is nothing to grade. The filters are
+        # the only thing that could have excluded everything, so drop them.
+        if not state.contexts:
+            widened = rewrite_sub_questions(state.plan.sub_questions, [], drop_filters=True)
+            return {
+                "next_action": "retrieve",
+                "plan": Plan(sub_questions=widened),
                 "retry_count": state.retry_count + 1,
-                "trace": ["Verify: No passages retrieved"],
+                "trace": ["Decide: broaden — filters matched nothing, dropping them"],
             }
 
         passages = "\n\n".join(
             f"[chunk {c.chunk_id}, {c.company} FY{c.fiscal_year}, {c.item_section}]\n{c.text[:500]}"
             for c in state.contexts
         )
-        question = f"Question: {state.user_query}\n\nPassages:\n{passages}"
+        searched = "\n".join(
+            f"{i}. {sq.text} ({sq.company or 'any'} / {sq.fiscal_year or 'any year'})"
+            for i, sq in enumerate(state.plan.sub_questions, 1)
+        )
+        question = (
+            f"Question: {state.user_query}\n\n"
+            f"Sub-questions searched:\n{searched}\n\nPassages:\n{passages}"
+        )
 
         try:
-            result = llm.structured(verify_instructions, question, Coverage)
-            if result.covered:
-                return {"coverage_ok": True, "trace": ["Verify: Passages cover the question"]}
-            else:
-                return {
-                    "coverage_ok": False,
-                    "retry_count": state.retry_count + 1,
-                    "trace": [f"Verify: Gap found — {result.gap} -> Triggering Retry (Attempt {state.retry_count + 1})"],
-                }
+            decision = llm.structured(decide_instructions, question, Decision)
         except ValueError:
-            return {"coverage_ok": True, "trace": ["Verify: Could not grade, proceeding"]}
+            return {"next_action": "answer", "trace": ["Decide: could not grade, answering"]}
+
+        if decision.action == "answer":
+            return {"next_action": "answer", "trace": [f"Decide: answer — {decision.reason}"]}
+
+        if decision.action == "ask_user":
+            return {
+                "next_action": "ask_user",
+                "clarification_message": decision.question_for_user,
+                "trace": [f"Decide: ask_user — {decision.reason}"],
+            }
+
+        new_plan = Plan(
+            sub_questions=rewrite_sub_questions(
+                state.plan.sub_questions,
+                decision.revised_queries,
+                drop_filters=decision.action == "broaden",
+            )
+        )
+        trace = [f"Decide: {decision.action} — {decision.reason}"]
+        trace += [
+            f'  retry: "{sq.text}" -> {sq.company or "any"} / {sq.fiscal_year or "any year"}'
+            for sq in new_plan.sub_questions
+        ]
+        return {
+            "next_action": "retrieve",
+            "plan": new_plan,
+            "retry_count": state.retry_count + 1,
+            "trace": trace,
+        }
 
     answer_instructions = textwrap.dedent("""
         Answer the question using only the passages provided.
@@ -233,4 +321,4 @@ def make_nodes(database: Database, retriever: HybridRetriever, llm: LLMClient):
         answer = llm.text(answer_instructions, question, model="large")
         return {"final_answer": answer, "trace": ["Answer: Synthesized response"]}
 
-    return plan_node, clarify_node, retrieve_node, verify_node, answer_node
+    return plan_node, clarify_node, retrieve_node, decide_node, answer_node

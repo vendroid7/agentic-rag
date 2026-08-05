@@ -143,7 +143,7 @@ def main():
 
         reply = final_snapshot.get("clarification_message") or final_snapshot.get("final_answer")
         
-        st.session_state.answering = question if final_snapshot.get("clarification_message") else None
+        st.session_state.answering = initial_state.user_query if final_snapshot.get("clarification_message") else None
 
         st.markdown(reply)
         with st.expander("Reasoning", expanded=bool(final_snapshot.get("clarification_message"))):
