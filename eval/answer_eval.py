@@ -5,9 +5,8 @@ Three scores per question, chosen so that two of them cost nothing:
 * Citation validity — every chunk the answer cites must be one the retriever
   actually returned. Pure string matching against the state, so a fabricated
   citation is caught deterministically.
-* Context relevance — the mean cross-encoder score of the passages that reached
-  the answer. The reranker already computed this during retrieval, so reading it
-  back is free.
+* Context relevance — how relevant the reranker judged the passages that reached
+  the answer. It scored them during retrieval, so reading those back is free.
 * Faithfulness — an LLM judge counts how many claims in the answer are supported
   by the passages. This is the only part that costs tokens: one call per question,
   on top of the agent run itself.
@@ -20,6 +19,7 @@ Usage:
     PYTHONPATH=src python eval/answer_eval.py
 """
 
+import math
 import re
 import uuid
 
@@ -83,6 +83,24 @@ def cited_chunk_ids(answer: str) -> set[int]:
     return {int(n) for n in re.findall(r"\[chunk (\d+)", answer)}
 
 
+def relevance(chunks) -> float:
+    """
+    Averages how relevant the reranker judged the passages that reached the answer.
+
+    The cross-encoder emits an unbounded logit, which reads as noise in a report,
+    so each score is squashed to the 0-1 probability it stands for before averaging.
+
+    Args:
+        chunks (list[Chunk]): The passages the answer was written from.
+
+    Returns:
+        float: Mean relevance in 0-1, or 0.0 when nothing was retrieved.
+    """
+    if not chunks:
+        return 0.0
+    return sum(1 / (1 + math.exp(-c.score)) for c in chunks) / len(chunks)
+
+
 def main():
     """
     Runs every question through the agent and scores the answer it produced.
@@ -114,8 +132,8 @@ def main():
         invented = cited - retrieved
         valid_citations += not invented
 
-        relevance = sum(c.score for c in state.contexts) / len(state.contexts) if state.contexts else 0.0
-        relevance_total += relevance
+        chunk_relevance = relevance(state.contexts)
+        relevance_total += chunk_relevance
 
         passages = "\n\n".join(f"[chunk {c.chunk_id}]\n{c.text}" for c in state.contexts)
         verdict = judge.structured(
@@ -127,14 +145,14 @@ def main():
 
         faithful = verdict.supported_claims / verdict.total_claims if verdict.total_claims else 1.0
         print(f"{'ok  ' if not invented else 'BAD '} {question[:52]:<54} "
-              f"faithful {faithful:.0%}  relevance {relevance:+.2f}  cites {len(cited)}")
+              f"faithful {faithful:.0%}  relevance {chunk_relevance:.0%}  cites {len(cited)}")
         for claim in verdict.unsupported:
             print(f"       unsupported: {claim[:90]}")
 
     print(f"\n{scored} questions scored")
     print(f"  citation validity: {valid_citations}/{scored} answers cited only retrieved passages")
     print(f"  faithfulness:      {supported_total}/{claims_total} claims supported by the passages")
-    print(f"  context relevance: {relevance_total / scored:+.2f} mean cross-encoder score")
+    print(f"  context relevance: {relevance_total / scored:.0%} mean reranker confidence in the passages used")
 
 
 if __name__ == "__main__":

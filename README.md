@@ -68,6 +68,24 @@ The two failure directions are reported separately because they cost different t
 
 The harness runs the real nodes rather than reimplementing the gate's rules, so it cannot drift from the code it measures.
 
+### Answer grounding
+
+A second harness scores the answers themselves. Citation validity and context relevance cost nothing — the cited chunk ids are checked against what retrieval actually returned, and the reranker already scored the passages. Only faithfulness needs a judge.
+
+```bash
+PYTHONPATH=src uv run python eval/answer_eval.py
+```
+
+```text
+8 questions scored
+  citation validity: 8/8 answers cited only retrieved passages
+  faithfulness:      45/48 claims supported by the passages
+```
+
+No answer invented a citation. The three unsupported claims came from one question about Tesla's market risk, where the answer drifted into key-personnel risk that the retrieved passages did not contain — the kind of drift that a citation check alone would miss, since the citations themselves were valid.
+
+Recall is not measured: that needs a labelled question-to-chunk set built by reading the filings, whereas these three metrics need no ground truth.
+
 ---
 
 ## 🧪 Sample Prompts
