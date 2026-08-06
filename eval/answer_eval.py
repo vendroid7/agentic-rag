@@ -30,8 +30,7 @@ from agent.llm import LLMClient
 from agent.state import AgentState
 from config import config
 
-# Every question names one filing, so the clarify gate stays out of the way and
-# each run reaches an answer in a single turn.
+# Each names one filing, so the gate stays out of the way and one turn reaches an answer.
 QUESTIONS = [
     "What are Apple's risk factors in 2024?",
     "What did Microsoft say about competition in FY2025?",

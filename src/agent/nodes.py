@@ -134,8 +134,7 @@ def make_nodes(database: Database, retriever: HybridRetriever, llm: LLMClient):
         except ValueError:
             plan = Plan(sub_questions=[SubQuestion(text=state.user_query)])
 
-        # The limit in the prompt is advice the model can ignore; this is what makes
-        # it hold, and each extra sub-question is another full retrieval and rerank.
+        # The prompt asks for this limit; this is what enforces it.
         dropped = len(plan.sub_questions) - config.MAX_SUBQUESTIONS
         if dropped > 0:
             plan = Plan(sub_questions=plan.sub_questions[: config.MAX_SUBQUESTIONS])

@@ -22,9 +22,6 @@ SEC_USER_AGENT = os.getenv("SEC_USER_AGENT", "")
 
 # --- LLM (Groq) ---
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-# One model for every call. llama-3.1-8b was tried for the cheaper steps, but it
-# echoes a nested schema back instead of filling it in and repeats itself when
-# writing answers, so nothing was left for a second tier to do.
 MODEL = "llama-3.3-70b-versatile"
 LLM_TEMPERATURE = 0.2
 LLM_MAX_TOKENS = 2048
@@ -34,12 +31,7 @@ MAX_RETRIES = 2  # How many times the Verifier can reject chunks before forcing 
 MAX_SUBQUESTIONS = 4  # Maximum number of sub-questions the planner can generate
 MAX_CLARIFICATIONS = 1  # How many times the agent may stop and ask the user before it has to proceed
 
-# Follow-ups like "what about Microsoft?" only need what the earlier turns were
-# about, so a turn is kept as its question and the filing it resolved to rather
-# than its answer. Five of those cost a couple of hundred tokens; five answers
-# would cost thousands, and the older ones would start pulling the planner away
-# from the question actually being asked.
-MAX_HISTORY_TURNS = 5
+MAX_HISTORY_TURNS = 5  # Past questions kept so follow-ups know what they refer to
 
 # --- Corpus to ingest ---
 DEFAULT_TICKERS = ["AAPL", "MSFT", "AMZN", "NVDA", "TSLA"]

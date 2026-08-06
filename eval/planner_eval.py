@@ -50,8 +50,7 @@ class Case:
     sub_questions: int | None = None
 
 
-# Ten questions that name a filing we hold. These are the over-asking guard: an
-# agent that clarifies reflexively fails here, and no spot-check would catch it.
+# The over-asking guard: an agent that clarifies reflexively fails here.
 ANSWERABLE = [
     Case("What are Apple's risk factors in 2024?", False, ["AAPL"], [2024], 1),
     Case("Compare Apple and Tesla risk factors in 2024", False, ["AAPL", "TSLA"], [2024], 2),
@@ -65,8 +64,7 @@ ANSWERABLE = [
     Case("What is Apple's market risk disclosure in 2024?", False, ["AAPL"], [2024], 1),
 ]
 
-# Under-specified questions. The corpus can answer them, but not until the user
-# says which filing they meant.
+# Answerable, but not until the user says which filing they meant.
 AMBIGUOUS = [
     Case("What were the main revenue drivers?", True, [], [], 1),
     Case("What are the risk factors?", True, [], [], 1),
@@ -76,8 +74,7 @@ AMBIGUOUS = [
     Case("What were the biggest risks in 2024?", True, [], [2024], 1),
 ]
 
-# Filings we never ingested. Extraction is not asserted, because there is no right
-# answer for a ticker outside the catalog — only stopping is correct.
+# Never ingested, so only stopping is correct and extraction is not asserted.
 OUT_OF_CORPUS = [
     Case("What are Netflix's risk factors in 2024?", True),
     Case("What were Apple's risk factors in 2019?", True),

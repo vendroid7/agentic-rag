@@ -119,8 +119,7 @@ if __name__ == "__main__":
     app = build_agent()
     thread = {"configurable": {"thread_id": uuid.uuid4().hex}}
 
-    # The first turn starts the run; each later one resumes the suspended graph
-    # with the user's answer, so the whole exchange is a single run.
+    # The first turn starts the run, later ones resume it.
     turn = AgentState(user_query=question)
     while True:
         result = app.invoke(turn, thread)

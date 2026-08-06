@@ -103,12 +103,8 @@ def main():
         
         st.session_state["history"] = [{"role": "assistant", "content": welcome_text}]
 
-    # Holds the thread of a run that stopped to ask something, so the next message
-    # typed resumes it instead of starting a new one. None means no run is waiting.
+    # Set when a run pauses to ask; the next message resumes it.
     st.session_state.setdefault("suspended_thread", None)
-
-    # One entry per answered question, oldest first, capped at MAX_HISTORY_TURNS.
-    # This is what lets "what about Microsoft?" know what it is following up on.
     st.session_state.setdefault("turns", [])
 
     with st.sidebar:
@@ -124,8 +120,7 @@ def main():
         )
         if st.button("🧹 Clear memory", use_container_width=True):
             st.session_state.turns = []
-            # A run waiting on a clarification belongs to the conversation being
-            # forgotten, so drop it too rather than resume into it later.
+            # A paused run belongs to the conversation being cleared.
             st.session_state.suspended_thread = None
             st.rerun()
 
@@ -166,23 +161,19 @@ def main():
                     final_snapshot = snapshot
                     panel.code(render_trace(final_snapshot.get("trace", [])), language=None)
         except Exception as exc:
-            # Usually a Groq rate limit. The thread keeps its saved state, so a
-            # question the agent had already paused on can still be resumed.
+            # Usually a Groq rate limit. The paused thread survives, so it can resume.
             panel.empty()
             st.error(f"The agent could not finish this question: {exc}")
             st.stop()
 
         panel.empty()
 
-        # A run that stopped to ask has its question waiting on the saved state.
         pending = app.get_state(thread).interrupts
         st.session_state.suspended_thread = thread if pending else None
         reply = pending[0].value if pending else final_snapshot.get("final_answer")
 
         if not pending:
-            # Only a question that reached an answer becomes a turn. A reply to a
-            # clarification belongs to the question that prompted it, and the
-            # original wording is on the state whichever way we got here.
+            # A clarification reply is not a turn, and user_query holds the original.
             answered = AgentState.model_validate(final_snapshot)
             targets = ", ".join(
                 f"{sq.company or 'any company'}/{sq.fiscal_year or 'any year'}"
