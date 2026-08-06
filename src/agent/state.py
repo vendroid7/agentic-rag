@@ -32,20 +32,18 @@ class Decision(BaseModel):
     """
     The agent's choice of what to do next, made after seeing retrieved passages.
 
-    Every field is a primitive on purpose: given a schema with a nested model
-    reference, the small model tends to echo the schema back instead of filling
-    it in.
-
     Attributes:
         action (str): One of 'answer', 'refine', 'broaden', or 'ask_user'.
         reason (str): One sentence explaining the choice, shown in the trace.
-        revised_queries (list[str]): Rewritten search text, one per sub-question
-            in the original order. Used by 'refine' and 'broaden'.
+        revised_queries (list[SubQuestion]): Rewritten sub-questions, one per
+            sub-question in the original order. Carrying the full sub-question
+            rather than bare text lets a retry correct the company or year it
+            searched, not just the wording. Used by 'refine' and 'broaden'.
         question_for_user (str): The question to put to the user, used by 'ask_user'.
     """
     action: Literal["answer", "refine", "broaden", "ask_user"]
     reason: str = ""
-    revised_queries: list[str] = Field(default_factory=list)
+    revised_queries: list[SubQuestion] = Field(default_factory=list)
     question_for_user: str = ""
 
 
@@ -57,8 +55,11 @@ class AgentState(BaseModel):
         user_query (str): The initial query from the user.
         plan (Optional[Plan]): The decomposed execution plan.
         contexts (list[Chunk]): The aggregated context retrieved from the vector store.
-        clarification_message (Optional[str]): System prompt pausing execution for user input.
-        next_action (Optional[str]): The action the decide node chose, read by the router.
+        clarifications (Annotated[list[str], operator.add]): The user's replies to
+            questions the agent stopped to ask, oldest first. The planner reads
+            these alongside the original query.
+        clarify_rounds (int): How many times the agent has stopped to ask the user.
+        next_action (Optional[str]): The node the plan or decide step chose, read by the router.
         retry_count (int): Integer tracking verification loop iterations.
         final_answer (Optional[str]): The synthesized generation output.
         trace (Annotated[list[str], operator.add]): The concatenated reasoning trace log.
@@ -66,7 +67,8 @@ class AgentState(BaseModel):
     user_query: str
     plan: Optional[Plan] = None
     contexts: list[Chunk] = Field(default_factory=list)
-    clarification_message: Optional[str] = None
+    clarifications: Annotated[list[str], operator.add] = []
+    clarify_rounds: int = 0
     next_action: Optional[str] = None
     retry_count: int = 0
     final_answer: Optional[str] = None

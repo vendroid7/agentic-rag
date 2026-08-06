@@ -1,5 +1,7 @@
 """Wires the five nodes into the agent loop and provides a CLI."""
 
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import StateGraph, END
 from sentence_transformers import SentenceTransformer, CrossEncoder
 
@@ -15,12 +17,17 @@ def build_agent():
     """
     Constructs and compiles the LangGraph state machine for the RAG agent.
 
-    Initializes all external dependencies (embedding model, retrieval indices, 
-    and LLM client) and injects them into the node factories. Defines the 
+    Initializes all external dependencies (embedding model, retrieval indices,
+    and LLM client) and injects them into the node factories. Defines the
     control flow edges and conditional routing logic.
 
+    The graph is compiled with a checkpointer because clarifying suspends the run
+    rather than ending it: the saved state is what a reply resumes into, so a
+    question and its clarification stay one run with one reasoning trace.
+
     Returns:
-        CompiledGraph: The executable LangGraph application.
+        CompiledGraph: The executable LangGraph application. Callers must pass a
+            config carrying a `thread_id`, which is the key the state is saved under.
     """
     embedder = SentenceTransformer(config.DEFAULT_EMBEDDING_MODEL)
     reranker = CrossEncoder(config.CROSS_ENCODER_MODEL)
@@ -34,8 +41,7 @@ def build_agent():
     database = Database(config.DUCKDB_PATH)
     llm = LLMClient(
         api_key=config.GROQ_API_KEY,
-        small_model=config.SMALL_MODEL,
-        large_model=config.LARGE_MODEL,
+        model=config.MODEL,
         temperature=config.LLM_TEMPERATURE,
         max_tokens=config.LLM_MAX_TOKENS,
     )
@@ -52,11 +58,10 @@ def build_agent():
             state (AgentState): The active state post-clarification.
 
         Returns:
-            str: The node identifier to transition to ('END' or 'retrieve').
+            str: The node identifier to transition to ('plan' when the user has
+                just answered a question, otherwise 'retrieve').
         """
-        if state.clarification_message:
-            return END
-        return "retrieve"
+        return "plan" if state.next_action == "plan" else "retrieve"
 
     def route_after_decide(state: AgentState) -> str:
         """
@@ -69,12 +74,10 @@ def build_agent():
             state (AgentState): The active state post-decision.
 
         Returns:
-            str: The node identifier to transition to ('answer', 'retrieve', or END).
+            str: The node identifier to transition to ('answer', 'retrieve' or 'plan').
         """
-        if state.next_action == "ask_user":
-            return END
-        if state.next_action == "retrieve":
-            return "retrieve"
+        if state.next_action in ("retrieve", "plan"):
+            return state.next_action
         return "answer"
 
     workflow = StateGraph(AgentState)
@@ -88,21 +91,33 @@ def build_agent():
     workflow.set_entry_point("plan")
     workflow.add_edge("plan", "clarify")
     workflow.add_conditional_edges(
-        "clarify", route_after_clarify, {END: END, "retrieve": "retrieve"}
+        "clarify", route_after_clarify, {"plan": "plan", "retrieve": "retrieve"}
     )
     workflow.add_edge("retrieve", "decide")
     workflow.add_conditional_edges(
         "decide",
         route_after_decide,
-        {"answer": "answer", "retrieve": "retrieve", END: END},
+        {"answer": "answer", "retrieve": "retrieve", "plan": "plan"},
     )
     workflow.add_edge("answer", END)
 
-    return workflow.compile()
+    # The checkpoint holds our own models, and the serializer refuses to restore a
+    # type it was not told about, so name the ones the state carries.
+    serde = JsonPlusSerializer(
+        allowed_msgpack_modules=[
+            ("agent.state", "Plan"),
+            ("agent.state", "SubQuestion"),
+            ("retrieval.hybrid", "Chunk"),
+        ]
+    )
+    return workflow.compile(checkpointer=MemorySaver(serde=serde))
 
 
 if __name__ == "__main__":
     import sys
+    import uuid
+
+    from langgraph.types import Command
 
     if len(sys.argv) < 2:
         print('Usage: python -m agent.graph "your question here"')
@@ -112,23 +127,21 @@ if __name__ == "__main__":
     print(f"Question: {question}\n")
 
     app = build_agent()
-    result = app.invoke(AgentState(user_query=question))
+    thread = {"configurable": {"thread_id": uuid.uuid4().hex}}
+
+    # The first turn starts the run; each later one resumes the suspended graph
+    # with the user's answer, so the whole exchange is a single run.
+    turn = AgentState(user_query=question)
+    while True:
+        result = app.invoke(turn, thread)
+        pending = result.get("__interrupt__")
+        if not pending:
+            break
+        turn = Command(resume=input(f"\n{pending[0].value}\n\nYour reply: ").strip())
+
     state = AgentState.model_validate(result)
 
-    print("Reasoning:")
+    print("\nReasoning:")
     for line in state.trace:
         print(f"  {line}")
-
-    if state.clarification_message:
-        print(f"\n{state.clarification_message}")
-        reply = input("\nYour reply: ").strip()
-        if reply:
-            combined = f"{question}\nThe user clarified: {reply}"
-            result = app.invoke(AgentState(user_query=combined))
-            state = AgentState.model_validate(result)
-            print("\nReasoning:")
-            for line in state.trace:
-                print(f"  {line}")
-            print(f"\n{state.final_answer}")
-    else:
-        print(f"\n{state.final_answer}")
+    print(f"\n{state.final_answer}")
