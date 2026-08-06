@@ -48,10 +48,25 @@ uv run streamlit run src/app.py
 ```
 Once the UI is live on your localhost, it will prompt you to securely enter your Groq API key in the sidebar. Once entered, you can start interacting with the UI immediately!
 
-### 5. Run the Evaluation (Optional)
+---
+
+## 📊 Evaluation
+
+Twenty labelled questions covering entity extraction and the clarify gate. The gate is a deterministic DuckDB lookup, so whether it stops to ask is decided entirely by the ticker and fiscal year the planner extracted — one run therefore measures planner accuracy *and* interactivity together, with no labelled chunks and no LLM judge.
+
 ```bash
 PYTHONPATH=src uv run python eval/planner_eval.py
 ```
+
+```text
+20/20 cases passed
+  over-asking:  0 of 10 clear questions were needlessly clarified
+  under-asking: 0 of 10 under-specified questions were searched anyway
+```
+
+The two failure directions are reported separately because they cost different things: clarifying a question that was already clear is an annoyance, while searching an under-specified one produces a confident wrong answer. Ten of the twenty cases exist only to catch over-asking — an agent that clarifies reflexively would pass a "does it clarify?" spot-check and fail here.
+
+The harness runs the real nodes rather than reimplementing the gate's rules, so it cannot drift from the code it measures.
 
 ---
 
@@ -73,9 +88,6 @@ agentic-rag/
 ├── .env.example                # Template for the above
 ├── pyproject.toml              # Project dependencies (uv)
 ├── requirements.txt            # Auto-generated requirements for Streamlit Cloud
-├── DESIGN.md                   # Architecture, key decisions and trade-offs
-├── LIMITATIONS.md              # Known limitations and the reasoning behind them
-├── WALKTHROUGH.md              # Line-by-line code tour and five dry runs
 ├── data/                       # Pre-built FAISS and DuckDB vector store
 ├── eval/
 │   └── planner_eval.py   # 20 labelled questions: extraction + clarify gate
@@ -97,11 +109,14 @@ agentic-rag/
 
 ---
 
-## 📖 Further Reading
+## ⚖️ Known Limitations
 
-* **[DESIGN.md](DESIGN.md)** — the architecture, why the agent loop is shaped this way, and the decisions worth defending.
-* **[LIMITATIONS.md](LIMITATIONS.md)** — what the system does not do, and the trade-off behind each gap.
-* **[WALKTHROUGH.md](WALKTHROUGH.md)** — a code tour with five dry runs showing how different questions flow through the graph.
+* **No conversational memory.** State lives for one question and the clarification that resolves it, so a question gets the same answer whether it is the first of the session or the hundredth — but follow-ups like *"what about Microsoft?"* are planned against those words alone.
+* **Passages are replaced on each retry, not accumulated.** A chunk found on the first attempt can be lost if the reworded query no longer surfaces it.
+* **The retry budget can cut off a hard question.** After `MAX_RETRIES` the agent must answer with what it holds — this is what guarantees termination.
+* **Narrative text only.** Questions turning on figures in financial tables are answered from surrounding commentary rather than the tables themselves.
+* **Small corpus.** 5 tickers × 2 fiscal years, so most of EDGAR is out of scope and refusing cleanly is a common correct outcome.
+* **Grounding is unmeasured.** Routing is evaluated above; whether every claim traces to a cited passage was checked by hand, not scored.
 
 ---
 
