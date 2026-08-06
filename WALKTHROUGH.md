@@ -150,4 +150,4 @@ Twenty labelled questions covering entity extraction and the clarify gate. Becau
 PYTHONPATH=src python eval/planner_eval.py
 ```
 
-The two failure directions are reported separately, because they cost different things: clarifying a question that was already clear is an annoyance, while searching an under-specified one produces a confident wrong answer. Currently 20/20, with 0/10 over-asking.
+The two failure directions are reported separately, because they cost different things: clarifying a question that was already clear is an annoyance, while searching an under-specified one produces a confident wrong answer. Currently 20/20, with zero over-asking across the ten already-clear questions.
