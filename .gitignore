@@ -26,6 +26,14 @@ Thumbs.db
 # Internal files
 JPM_CIB_Agentic_RAG.pptx
 PRESENTATION.md
+task.md
+*.key
+generate_ppt.py
+generate_ppt_expanded.py
+generate_cib_ppt.py
+
+# Scratch test output
+*.log
 
 # Tooling output
 .playwright-mcp/
