@@ -227,8 +227,10 @@ def make_nodes(database: Database, retriever: HybridRetriever, llm: LLMClient):
         - "broaden": the search was restricted to the wrong company or year and so
           returned little of use. Return revised_queries; the filters are dropped
           for you.
-        - "ask_user": the corpus cannot answer this without more input from the person.
-          Return question_for_user.
+        - "ask_user": the person can tell you something that would narrow the search --
+          which company, which fiscal year, which section. Return question_for_user.
+          Do not choose this when the filings simply do not discuss the subject:
+          nothing the user could say would help, so "answer" and say so plainly.
 
         revised_queries must contain one entry per sub-question, in the same order
         as the sub-questions you were given. Each entry has the same shape as a
@@ -237,9 +239,10 @@ def make_nodes(database: Database, retriever: HybridRetriever, llm: LLMClient):
         filing and you know which one it should have gone to; leave them null to
         keep the filter already in place.
 
-        Prefer "answer" when the facts are present. Only choose "ask_user" when no
-        amount of further searching would help. Explain your choice in one sentence
-        in `reason`.
+        Prefer "answer" when the facts are present, and equally when the filings
+        clearly do not contain them -- reporting honestly that something is not in
+        the filings is a real answer, not a failure. Explain your choice in one
+        sentence in `reason`.
     """).strip()
 
     def decide_node(state: AgentState) -> dict:
