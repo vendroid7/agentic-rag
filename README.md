@@ -48,18 +48,18 @@ uv run streamlit run src/app.py
 ```
 Once the UI is live on your localhost, it will prompt you to securely enter your Groq API key in the sidebar. Once entered, you can start interacting with the UI immediately!
 
+### 5. Run the Evaluation (Optional)
+```bash
+PYTHONPATH=src uv run python eval/planner_eval.py
+```
+
 ---
 
 ## 🧪 Sample Prompts
 
-These three prompts each exercise a different capability. `Evidence.pdf` contains
-screenshots of all three running end to end, including the expanded reasoning trace.
-
-| Prompt | What it demonstrates |
-| --- | --- |
-| *Compare Apple and Tesla risk factors in 2024* | Multi-hop planning — the query is split into two independently filtered retrievals and synthesised into one grounded comparison. |
-| *What were the main revenue drivers?* | The clarify gate — no company or year was given, the catalog matches every filing, so the agent stops and asks before searching. |
-| *What was Microsoft's CEO's exact favorite color in 2024?* | Dynamic action selection — the agent chooses `refine`, rewrites its own search, retries, then honestly reports that the filings do not contain the answer. |
+* *Compare Apple and Tesla risk factors in 2024*
+* *What were the main revenue drivers?*
+* *What was Microsoft's CEO's exact favorite color in 2024?*
 
 ---
 
@@ -73,12 +73,12 @@ agentic-rag/
 ├── .env.example                # Template for the above
 ├── pyproject.toml              # Project dependencies (uv)
 ├── requirements.txt            # Auto-generated requirements for Streamlit Cloud
-├── Agentic_RAG_PPT.pptx        # Presentation Deck
-├── Evidence.pdf                # Screenshots of the three demo prompts, run end to end
-├── LIMITATIONS.md              # Known limitations and the trade-offs behind them
+├── DESIGN.md                   # Architecture, key decisions and trade-offs
+├── LIMITATIONS.md              # Known limitations and the reasoning behind them
+├── WALKTHROUGH.md              # Line-by-line code tour and five dry runs
 ├── data/                       # Pre-built FAISS and DuckDB vector store
 ├── eval/
-│   └── planner_eval.py   # 20 labelled questions: entity extraction + clarify gate
+│   └── planner_eval.py   # 20 labelled questions: extraction + clarify gate
 ├── src/
 │   ├── app.py            # Streamlit UI (Frontend)
 │   ├── config/
@@ -97,16 +97,11 @@ agentic-rag/
 
 ---
 
-## 🧠 Architecture Highlights
+## 📖 Further Reading
 
-The system is built without heavy abstractions (like LangChain agents), focusing on simple, readable Python functions and explicit control flow.
-
-* **Agentic Routing:** A 5-node LangGraph state machine (`plan` -> `clarify` -> `retrieve` -> `decide` -> `answer`).
-* **The Clarify Gate:** The agent explicitly queries the DuckDB catalog to detect vague questions. If a query matches multiple filings, it suspends the run and asks the user to clarify. The graph is checkpointed, so the reply resumes the same run rather than starting a new one — a question and its clarification stay one exchange with one reasoning trace.
-* **Dynamic Action Selection:** After retrieving, the `decide_node` chooses one of four courses of action rather than following a fixed retry edge — `answer`, `refine` (rewrite the search wording and try again), `broaden` (drop an over-narrow company/year filter), or `ask_user` (hand the question back). The retry budget is enforced in code, so the model chooses *what* to do while the graph guarantees termination.
-* **Constrained by design:** The action space is a closed enum validated by Pydantic rather than open-ended tool use. This buys reliability and a hard ceiling on cost per query, at the cost of extensibility. This is closer to Corrective RAG (CRAG) than to a ReAct agent.
-* **Measured, not asserted:** `PYTHONPATH=src python eval/planner_eval.py` runs 20 labelled questions covering entity extraction and the clarify gate, and reports the two failure directions separately — clarifying a question that was already clear, and searching one that was not. Currently 20/20. Because the gate is a deterministic catalog lookup, this measures planner accuracy and interactivity in one pass, with no LLM judge.
-* **One model, deliberately:** Every call runs on `llama-3.3-70b`. `llama-3.1-8b` was tried for planning and deciding to save latency, but it echoes a nested schema back instead of filling it in, and it repeats itself when writing answers. Planning and deciding are where a mistake is most expensive — a bad plan searches the wrong filing — so the tier was dropped rather than the accuracy.
+* **[DESIGN.md](DESIGN.md)** — the architecture, why the agent loop is shaped this way, and the decisions worth defending.
+* **[LIMITATIONS.md](LIMITATIONS.md)** — what the system does not do, and the trade-off behind each gap.
+* **[WALKTHROUGH.md](WALKTHROUGH.md)** — a code tour with five dry runs showing how different questions flow through the graph.
 
 ---
 

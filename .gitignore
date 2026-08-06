@@ -37,3 +37,7 @@ generate_cib_ppt.py
 
 # Tooling output
 .playwright-mcp/
+
+# Presentation artefacts (kept local)
+Agentic_RAG_PPT.pptx
+Evidence.pdf
