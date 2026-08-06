@@ -98,6 +98,8 @@ def main():
         welcome_text += "- *Compare Apple and Tesla risk factors in 2024*\n"
         welcome_text += "- *What were the main revenue drivers?*\n"
         welcome_text += "- *What was Microsoft's CEO's exact favorite color in 2024?*\n"
+        welcome_text += "- *What are Apple's risk factors in 2024?* then *what about Microsoft?*\n"
+        welcome_text += "- *What are Apple's risk factors in 2024?* then *and 2025?*\n"
         
         st.session_state["history"] = [{"role": "assistant", "content": welcome_text}]
 
@@ -131,6 +133,8 @@ def main():
         st.caption("Compare Apple and Tesla risk factors in 2024")
         st.caption("What were the main revenue drivers?")
         st.caption("What was Microsoft's CEO's exact favorite color in 2024?")
+        st.caption("What are Apple's risk factors in 2024? → what about Microsoft?")
+        st.caption("What are Apple's risk factors in 2024? → and 2025?")
 
     for turn in st.session_state.history:
         with st.chat_message(turn["role"]):
