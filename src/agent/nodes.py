@@ -125,9 +125,17 @@ def make_nodes(database: Database, retriever: HybridRetriever, llm: LLMClient):
         except ValueError:
             plan = Plan(sub_questions=[SubQuestion(text=state.user_query)])
 
+        # The limit in the prompt is advice the model can ignore; this is what makes
+        # it hold, and each extra sub-question is another full retrieval and rerank.
+        dropped = len(plan.sub_questions) - config.MAX_SUBQUESTIONS
+        if dropped > 0:
+            plan = Plan(sub_questions=plan.sub_questions[: config.MAX_SUBQUESTIONS])
+
         trace = [f"Plan: {len(plan.sub_questions)} sub-question(s)"]
         for i, sq in enumerate(plan.sub_questions, 1):
             trace.append(f'  {i}. "{sq.text}" -> {sq.company or "any"} / {sq.fiscal_year or "any year"}')
+        if dropped > 0:
+            trace.append(f"  ({dropped} more dropped — the plan is capped at {config.MAX_SUBQUESTIONS})")
 
         return {"plan": plan, "trace": trace}
 
