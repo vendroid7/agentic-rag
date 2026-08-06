@@ -55,6 +55,10 @@ class AgentState(BaseModel):
         user_query (str): The initial query from the user.
         plan (Optional[Plan]): The decomposed execution plan.
         contexts (list[Chunk]): The aggregated context retrieved from the vector store.
+        history (list[str]): Earlier questions in the conversation and the filings
+            they resolved to, oldest first. Supplied by the caller, not by the
+            graph, so a run cannot grow it and every question stays reproducible
+            from its own inputs.
         clarifications (Annotated[list[str], operator.add]): The user's replies to
             questions the agent stopped to ask, oldest first. The planner reads
             these alongside the original query.
@@ -67,6 +71,7 @@ class AgentState(BaseModel):
     user_query: str
     plan: Optional[Plan] = None
     contexts: list[Chunk] = Field(default_factory=list)
+    history: list[str] = Field(default_factory=list)
     clarifications: Annotated[list[str], operator.add] = []
     clarify_rounds: int = 0
     next_action: Optional[str] = None

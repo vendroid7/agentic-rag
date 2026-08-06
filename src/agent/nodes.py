@@ -100,6 +100,11 @@ def make_nodes(database: Database, retriever: HybridRetriever, llm: LLMClient):
         - fiscal_year: the year as an integer (e.g. 2024). Extract this if ANY part of the input (including clarifications) mentions a year.
 
         If the input completely lacks a company or year, set those to null.
+
+        Earlier turns may be listed above the current question. Use them only to
+        resolve what the current question leaves implicit — "it", "that", "what
+        about X", "and 2025". When the current question names its own company and
+        year, ignore the earlier turns entirely.
     """).strip()
 
     def plan_node(state: AgentState) -> dict:
@@ -119,6 +124,10 @@ def make_nodes(database: Database, retriever: HybridRetriever, llm: LLMClient):
         question = state.user_query
         for reply in state.clarifications:
             question += f"\nThe user clarified: {reply}"
+
+        if state.history:
+            earlier = "\n".join(f"- {turn}" for turn in state.history)
+            question = f"Earlier turns:\n{earlier}\n\nCurrent question: {question}"
 
         try:
             plan = llm.structured(plan_instructions, question, Plan)

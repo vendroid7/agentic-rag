@@ -105,12 +105,28 @@ def main():
     # typed resumes it instead of starting a new one. None means no run is waiting.
     st.session_state.setdefault("suspended_thread", None)
 
+    # One entry per answered question, oldest first, capped at MAX_HISTORY_TURNS.
+    # This is what lets "what about Microsoft?" know what it is following up on.
+    st.session_state.setdefault("turns", [])
+
     with st.sidebar:
         st.subheader("Ingested Corpus")
         st.caption(f"{len(catalog)} filings indexed")
         for filing in catalog:
             st.text(f"{filing.company} ({filing.ticker}) FY{filing.fiscal_year}")
         
+        st.subheader("🧠 Memory")
+        st.caption(
+            f"Remembering {len(st.session_state.turns)} of the last "
+            f"{config.MAX_HISTORY_TURNS} questions, so follow-ups know what they refer to."
+        )
+        if st.button("🧹 Clear memory", use_container_width=True):
+            st.session_state.turns = []
+            # A run waiting on a clarification belongs to the conversation being
+            # forgotten, so drop it too rather than resume into it later.
+            st.session_state.suspended_thread = None
+            st.rerun()
+
         st.subheader("💡 Suggested Prompts")
         st.caption("Compare Apple and Tesla risk factors in 2024")
         st.caption("What were the main revenue drivers?")
@@ -136,7 +152,7 @@ def main():
         turn = Command(resume=question)
     else:
         thread = {"configurable": {"thread_id": uuid.uuid4().hex}}
-        turn = AgentState(user_query=question)
+        turn = AgentState(user_query=question, history=st.session_state.turns)
 
     with st.chat_message("assistant"):
         panel = st.empty()
@@ -158,6 +174,19 @@ def main():
         pending = app.get_state(thread).interrupts
         st.session_state.suspended_thread = thread if pending else None
         reply = pending[0].value if pending else final_snapshot.get("final_answer")
+
+        if not pending:
+            # Only a question that reached an answer becomes a turn. A reply to a
+            # clarification belongs to the question that prompted it, and the
+            # original wording is on the state whichever way we got here.
+            answered = AgentState.model_validate(final_snapshot)
+            targets = ", ".join(
+                f"{sq.company or 'any company'}/{sq.fiscal_year or 'any year'}"
+                for sq in (answered.plan.sub_questions if answered.plan else [])
+            )
+            st.session_state.turns = (
+                st.session_state.turns + [f'"{answered.user_query}" ({targets})']
+            )[-config.MAX_HISTORY_TURNS:]
 
         st.markdown(reply)
         with st.expander("Reasoning", expanded=bool(pending)):
