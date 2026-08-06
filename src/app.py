@@ -95,9 +95,9 @@ def main():
             welcome_text += f"- {filing.company} ({filing.ticker}) FY{filing.fiscal_year}\n"
         
         welcome_text += "\n**Here are a few things you can ask me:**\n"
-        welcome_text += "- *Compare Apple and Tesla risk factors in 2024* (Demonstrates Multi-Hop Planning)\n"
-        welcome_text += "- *What were the main revenue drivers?* (Demonstrates the Clarify Gate)\n"
-        welcome_text += "- *What was Microsoft's CEO's exact favorite color in 2024?* (Demonstrates Context Verification)\n"
+        welcome_text += "- *Compare Apple and Tesla risk factors in 2024*\n"
+        welcome_text += "- *What were the main revenue drivers?*\n"
+        welcome_text += "- *What was Microsoft's CEO's exact favorite color in 2024?*\n"
         
         st.session_state["history"] = [{"role": "assistant", "content": welcome_text}]
 

@@ -179,9 +179,10 @@ def main():
             print(f"        {failure}")
 
     total = len(CASES)
+    needed_asking = len(AMBIGUOUS) + len(OUT_OF_CORPUS)
     print(f"\n{passed}/{total} cases passed")
-    print(f"  asked when the question was already clear: {asked_when_clear}/{len(ANSWERABLE)}")
-    print(f"  searched when it should have asked:        {searched_when_vague}/{len(AMBIGUOUS) + len(OUT_OF_CORPUS)}")
+    print(f"  over-asking:  {asked_when_clear} of {len(ANSWERABLE)} clear questions were needlessly clarified")
+    print(f"  under-asking: {searched_when_vague} of {needed_asking} under-specified questions were searched anyway")
 
 
 if __name__ == "__main__":

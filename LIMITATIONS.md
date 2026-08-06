@@ -88,8 +88,8 @@ Current result: **20/20**, with both failure directions separated, because they 
 different things — asking when the question was already clear is an annoyance, while
 searching an under-specified question yields a confident wrong answer.
 
-    asked when the question was already clear: 0/10
-    searched when it should have asked:        0/10
+    over-asking:  0 of 10 clear questions were needlessly clarified
+    under-asking: 0 of 10 under-specified questions were searched anyway
 
 The harness was mutation-checked: feeding it deliberately wrong expectations
 (inverted gate, wrong ticker, wrong sub-question count) makes it fail on each, so
