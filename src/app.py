@@ -140,10 +140,17 @@ def main():
 
     with st.chat_message("assistant"):
         panel = st.empty()
-        with st.spinner("Working..."):
-            for snapshot in app.stream(turn, thread, stream_mode="values"):
-                final_snapshot = snapshot
-                panel.code(render_trace(final_snapshot.get("trace", [])), language=None)
+        try:
+            with st.spinner("Working..."):
+                for snapshot in app.stream(turn, thread, stream_mode="values"):
+                    final_snapshot = snapshot
+                    panel.code(render_trace(final_snapshot.get("trace", [])), language=None)
+        except Exception as exc:
+            # Usually a Groq rate limit. The thread keeps its saved state, so a
+            # question the agent had already paused on can still be resumed.
+            panel.empty()
+            st.error(f"The agent could not finish this question: {exc}")
+            st.stop()
 
         panel.empty()
 
