@@ -1,6 +1,9 @@
 """Streamlit chat interface for the Agentic RAG system."""
 
+import uuid
+
 import streamlit as st
+from langgraph.types import Command
 
 from agent.graph import build_agent
 from agent.state import AgentState
@@ -98,7 +101,9 @@ def main():
         
         st.session_state["history"] = [{"role": "assistant", "content": welcome_text}]
 
-    st.session_state.setdefault("answering", None)
+    # Holds the thread of a run that stopped to ask something, so the next message
+    # typed resumes it instead of starting a new one. None means no run is waiting.
+    st.session_state.setdefault("suspended_thread", None)
 
     with st.sidebar:
         st.subheader("Ingested Corpus")
@@ -126,27 +131,29 @@ def main():
     with st.chat_message("user"):
         st.markdown(question)
 
-    if st.session_state.answering:
-        combined_query = f"{st.session_state.answering}\nThe user clarified: {question}"
-        initial_state = AgentState(user_query=combined_query)
+    if st.session_state.suspended_thread:
+        thread = st.session_state.suspended_thread
+        turn = Command(resume=question)
     else:
-        initial_state = AgentState(user_query=question)
+        thread = {"configurable": {"thread_id": uuid.uuid4().hex}}
+        turn = AgentState(user_query=question)
 
     with st.chat_message("assistant"):
         panel = st.empty()
         with st.spinner("Working..."):
-            for snapshot in app.stream(initial_state, stream_mode="values"):
+            for snapshot in app.stream(turn, thread, stream_mode="values"):
                 final_snapshot = snapshot
                 panel.code(render_trace(final_snapshot.get("trace", [])), language=None)
-        
+
         panel.empty()
 
-        reply = final_snapshot.get("clarification_message") or final_snapshot.get("final_answer")
-        
-        st.session_state.answering = initial_state.user_query if final_snapshot.get("clarification_message") else None
+        # A run that stopped to ask has its question waiting on the saved state.
+        pending = app.get_state(thread).interrupts
+        st.session_state.suspended_thread = thread if pending else None
+        reply = pending[0].value if pending else final_snapshot.get("final_answer")
 
         st.markdown(reply)
-        with st.expander("Reasoning", expanded=bool(final_snapshot.get("clarification_message"))):
+        with st.expander("Reasoning", expanded=bool(pending)):
             st.code(render_trace(final_snapshot.get("trace", [])), language=None)
 
     st.session_state.history.append(

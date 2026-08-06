@@ -22,14 +22,17 @@ SEC_USER_AGENT = os.getenv("SEC_USER_AGENT", "")
 
 # --- LLM (Groq) ---
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-SMALL_MODEL = "llama-3.1-8b-instant"       # plan, clarify, verify
-LARGE_MODEL = "llama-3.3-70b-versatile"    # final answer synthesis
+# One model for every call. llama-3.1-8b was tried for the cheaper steps, but it
+# echoes a nested schema back instead of filling it in and repeats itself when
+# writing answers, so nothing was left for a second tier to do.
+MODEL = "llama-3.3-70b-versatile"
 LLM_TEMPERATURE = 0.2
 LLM_MAX_TOKENS = 2048
 
 # --- Agent Settings ---
 MAX_RETRIES = 2  # How many times the Verifier can reject chunks before forcing an answer
 MAX_SUBQUESTIONS = 4  # Maximum number of sub-questions the planner can generate
+MAX_CLARIFICATIONS = 1  # How many times the agent may stop and ask the user before it has to proceed
 
 # --- Corpus to ingest ---
 DEFAULT_TICKERS = ["AAPL", "MSFT", "AMZN", "NVDA", "TSLA"]

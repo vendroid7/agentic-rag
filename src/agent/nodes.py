@@ -6,6 +6,8 @@ LangGraph merges those updates into the state automatically.
 
 import textwrap
 
+from langgraph.types import interrupt
+
 from agent.state import AgentState, Plan, SubQuestion, Decision
 from agent.llm import LLMClient
 from config import config
@@ -14,18 +16,19 @@ from retrieval.hybrid import HybridRetriever
 
 
 def rewrite_sub_questions(
-    old: list[SubQuestion], texts: list[str], drop_filters: bool
+    old: list[SubQuestion], revised: list[SubQuestion], drop_filters: bool
 ) -> list[SubQuestion]:
     """
-    Applies the model's rewritten query text to the existing retrieval targets.
+    Applies the model's rewritten sub-questions to the existing retrieval targets.
 
     One sub-question is kept per original target, so a comparison across two
     companies cannot collapse into a single search.
 
     Args:
         old (list[SubQuestion]): The sub-questions from the current plan.
-        texts (list[str]): Replacement query text, positionally matched to `old`.
-            Positions the model left out keep their original text.
+        revised (list[SubQuestion]): Replacements, positionally matched to `old`.
+            Positions the model left out keep their original sub-question, and a
+            filter the model left empty falls back to the one already in place.
         drop_filters (bool): Whether to clear the company and fiscal year
             constraints, which is what widens an over-narrow search.
 
@@ -34,12 +37,16 @@ def rewrite_sub_questions(
     """
     rewritten = []
     for i, sq in enumerate(old):
-        text = texts[i] if i < len(texts) else sq.text
+        new = revised[i] if i < len(revised) else sq
         if drop_filters:
-            rewritten.append(SubQuestion(text=text))
+            rewritten.append(SubQuestion(text=new.text))
         else:
             rewritten.append(
-                SubQuestion(text=text, company=sq.company, fiscal_year=sq.fiscal_year)
+                SubQuestion(
+                    text=new.text,
+                    company=new.company or sq.company,
+                    fiscal_year=new.fiscal_year or sq.fiscal_year,
+                )
             )
     return rewritten
 
@@ -99,15 +106,22 @@ def make_nodes(database: Database, retriever: HybridRetriever, llm: LLMClient):
         """
         Decomposes the primary query into structured execution steps.
 
+        Runs again after every clarification, so anything the user has since told
+        us is planned against together with their original question.
+
         Args:
             state (AgentState): The current execution state encapsulating the user query.
 
         Returns:
-            dict: An updated state dictionary containing the generated 'plan' 
+            dict: An updated state dictionary containing the generated 'plan'
                   and the concatenated 'trace' for observability.
         """
+        question = state.user_query
+        for reply in state.clarifications:
+            question += f"\nThe user clarified: {reply}"
+
         try:
-            plan = llm.structured(plan_instructions, state.user_query, Plan)
+            plan = llm.structured(plan_instructions, question, Plan)
         except ValueError:
             plan = Plan(sub_questions=[SubQuestion(text=state.user_query)])
 
@@ -121,15 +135,17 @@ def make_nodes(database: Database, retriever: HybridRetriever, llm: LLMClient):
         """
         Validates planned sub-queries against the active database index.
 
-        Identifies ambiguous requests or out-of-domain queries by comparing 
-        the extracted entities against the SQL metadata catalog.
+        Identifies ambiguous requests or out-of-domain queries by comparing
+        the extracted entities against the SQL metadata catalog. When one is
+        found the graph is suspended until the user answers, and the reply sends
+        the agent back through planning with the target it was missing.
 
         Args:
             state (AgentState): The execution state containing the active plan.
 
         Returns:
-            dict: A state update potentially containing a 'clarification_message' 
-                  if human-in-the-loop validation is required, alongside the 'trace'.
+            dict: A state update routing to 'plan' with the user's reply recorded
+                  in 'clarifications', or to 'retrieve' when every target resolves.
         """
         for sq in state.plan.sub_questions:
             matches = database.resolve(company=sq.company, fiscal_year=sq.fiscal_year)
@@ -138,27 +154,40 @@ def make_nodes(database: Database, retriever: HybridRetriever, llm: LLMClient):
                 options = ", ".join(
                     f"{t.company} ({t.ticker}) FY{t.fiscal_year}" for t in catalog
                 )
-                return {
-                    "clarification_message": (
-                        f"I don't have filings matching that. "
-                        f"I have: {options}. Which would you like?"
-                    ),
-                    "trace": [f"Clarify: No match — asking user"],
-                }
-
-            if len(matches) > 1 and (sq.company is None or sq.fiscal_year is None):
+                question = (
+                    f"I don't have filings matching that. "
+                    f"I have: {options}. Which would you like?"
+                )
+                note = "Clarify: No match — asking user"
+            elif len(matches) > 1 and (sq.company is None or sq.fiscal_year is None):
                 options = ", ".join(
                     f"{t.company} ({t.ticker}) FY{t.fiscal_year}" for t in matches
                 )
+                question = (
+                    f'Which filing did you mean for "{sq.text}"? Options: {options}'
+                )
+                note = f"Clarify: {len(matches)} matches — asking user"
+            else:
+                continue
+
+            if state.clarify_rounds >= config.MAX_CLARIFICATIONS:
                 return {
-                    "clarification_message": (
-                        f'Which filing did you mean for "{sq.text}"? '
-                        f"Options: {options}"
-                    ),
-                    "trace": [f"Clarify: {len(matches)} matches — asking user"],
+                    "next_action": "retrieve",
+                    "trace": ["Clarify: Still ambiguous, but already asked — searching anyway"],
                 }
 
-        return {"trace": ["Clarify: All targets resolved — searching"]}
+            reply = interrupt(question)
+            return {
+                "next_action": "plan",
+                "clarifications": [reply],
+                "clarify_rounds": state.clarify_rounds + 1,
+                "trace": [note, f"Clarify: User replied — {reply}"],
+            }
+
+        return {
+            "next_action": "retrieve",
+            "trace": ["Clarify: All targets resolved — searching"],
+        }
 
     def retrieve_node(state: AgentState) -> dict:
         """
@@ -201,8 +230,12 @@ def make_nodes(database: Database, retriever: HybridRetriever, llm: LLMClient):
         - "ask_user": the corpus cannot answer this without more input from the person.
           Return question_for_user.
 
-        revised_queries must contain one query per sub-question, in the same order
-        as the sub-questions you were given.
+        revised_queries must contain one entry per sub-question, in the same order
+        as the sub-questions you were given. Each entry has the same shape as a
+        sub-question: text, company (a ticker or null) and fiscal_year (an integer
+        or null). Set company or fiscal_year when the search went to the wrong
+        filing and you know which one it should have gone to; leave them null to
+        keep the filter already in place.
 
         Prefer "answer" when the facts are present. Only choose "ask_user" when no
         amount of further searching would help. Explain your choice in one sentence
@@ -222,7 +255,7 @@ def make_nodes(database: Database, retriever: HybridRetriever, llm: LLMClient):
         Returns:
             dict: An update setting 'next_action' for the router, plus the rewritten
                   'plan' and incremented 'retry_count' when a retry was chosen, or
-                  'clarification_message' when the agent chose to ask the user.
+                  the user's reply in 'clarifications' when the agent chose to ask.
         """
         if state.retry_count >= config.MAX_RETRIES:
             return {
@@ -263,10 +296,20 @@ def make_nodes(database: Database, retriever: HybridRetriever, llm: LLMClient):
             return {"next_action": "answer", "trace": [f"Decide: answer — {decision.reason}"]}
 
         if decision.action == "ask_user":
+            if state.clarify_rounds >= config.MAX_CLARIFICATIONS:
+                return {
+                    "next_action": "answer",
+                    "trace": ["Decide: ask_user, but already asked once — answering instead"],
+                }
+            reply = interrupt(decision.question_for_user)
             return {
-                "next_action": "ask_user",
-                "clarification_message": decision.question_for_user,
-                "trace": [f"Decide: ask_user — {decision.reason}"],
+                "next_action": "plan",
+                "clarifications": [reply],
+                "clarify_rounds": state.clarify_rounds + 1,
+                "trace": [
+                    f"Decide: ask_user — {decision.reason}",
+                    f"Decide: User replied — {reply}",
+                ],
             }
 
         new_plan = Plan(
@@ -318,7 +361,7 @@ def make_nodes(database: Database, retriever: HybridRetriever, llm: LLMClient):
         )
         question = f"Question: {state.user_query}\n\nPassages:\n{passages}"
 
-        answer = llm.text(answer_instructions, question, model="large")
+        answer = llm.text(answer_instructions, question)
         return {"final_answer": answer, "trace": ["Answer: Synthesized response"]}
 
     return plan_node, clarify_node, retrieve_node, decide_node, answer_node
