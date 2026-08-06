@@ -41,3 +41,10 @@ generate_cib_ppt.py
 # Presentation artefacts (kept local)
 Agentic_RAG_PPT.pptx
 Evidence.pdf
+
+# Working docs and diagram source (kept local)
+DESIGN.md
+LIMITATIONS.md
+WALKTHROUGH.md
+generate_graph.py
+agent_graph.png
