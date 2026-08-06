@@ -109,15 +109,4 @@ agentic-rag/
 
 ---
 
-## ⚖️ Known Limitations
-
-* **No conversational memory.** State lives for one question and the clarification that resolves it, so a question gets the same answer whether it is the first of the session or the hundredth — but follow-ups like *"what about Microsoft?"* are planned against those words alone.
-* **Passages are replaced on each retry, not accumulated.** A chunk found on the first attempt can be lost if the reworded query no longer surfaces it.
-* **The retry budget can cut off a hard question.** After `MAX_RETRIES` the agent must answer with what it holds — this is what guarantees termination.
-* **Narrative text only.** Questions turning on figures in financial tables are answered from surrounding commentary rather than the tables themselves.
-* **Small corpus.** 5 tickers × 2 fiscal years, so most of EDGAR is out of scope and refusing cleanly is a common correct outcome.
-* **Grounding is unmeasured.** Routing is evaluated above; whether every claim traces to a cited passage was checked by hand, not scored.
-
----
-
 *Note: AI assistance was used during development to speed up boilerplate coding and generate comments to improve overall readability.*
