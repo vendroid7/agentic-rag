@@ -1,7 +1,6 @@
 """Wires the five nodes into the agent loop and provides a CLI."""
 
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import StateGraph, END
 from sentence_transformers import SentenceTransformer, CrossEncoder
 
@@ -101,16 +100,7 @@ def build_agent():
     )
     workflow.add_edge("answer", END)
 
-    # The checkpoint holds our own models, and the serializer refuses to restore a
-    # type it was not told about, so name the ones the state carries.
-    serde = JsonPlusSerializer(
-        allowed_msgpack_modules=[
-            ("agent.state", "Plan"),
-            ("agent.state", "SubQuestion"),
-            ("retrieval.hybrid", "Chunk"),
-        ]
-    )
-    return workflow.compile(checkpointer=MemorySaver(serde=serde))
+    return workflow.compile(checkpointer=MemorySaver())
 
 
 if __name__ == "__main__":
