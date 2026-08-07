@@ -50,6 +50,20 @@ Once the UI is live on your localhost, it will prompt you to securely enter your
 
 ---
 
+## ⚙️ How it works
+
+Five nodes, wired as a LangGraph state machine. Two of them make a decision; the other three are fixed steps.
+
+* **plan** — splits the question into up to four sub-questions, each with a ticker and a fiscal year. A missing one stays `null` on purpose.
+* **clarify** — asks DuckDB what matches. No rows, or more than one with a `null` filter, and it stops and asks the user. The run is checkpointed, so the reply resumes it rather than starting over.
+* **retrieve** — DuckDB narrows to the right filing, then FAISS and BM25 each fetch 20 candidates and a cross-encoder keeps the best four per sub-question.
+* **decide** — the only node the model steers. It picks `answer`, `refine`, `broaden` or `ask_user`. The retry budget is checked in code before the model is called, so the loop always ends.
+* **answer** — writes from the passages only and cites each claim.
+
+The UI remembers the last five questions and the filing each resolved to, so follow-ups work; a sidebar button clears it.
+
+---
+
 ## 📊 Evaluation
 
 Twenty labelled questions covering entity extraction and the clarify gate. The gate is a deterministic DuckDB lookup, so whether it stops to ask is decided entirely by the ticker and fiscal year the planner extracted — one run therefore measures planner accuracy *and* interactivity together, with no labelled chunks and no LLM judge.
@@ -82,9 +96,15 @@ PYTHONPATH=src uv run python eval/answer_eval.py
   faithfulness:      45/48 claims supported by the passages
 ```
 
-No answer invented a citation. The three unsupported claims came from one question about Tesla's market risk, where the answer drifted into key-personnel risk that the retrieved passages did not contain — the kind of drift that a citation check alone would miss, since the citations themselves were valid.
+No answer invented a citation. Two of the three unsupported claims came from one question about Tesla's market risk, where the answer drifted into key-personnel risk that the retrieved passages did not contain — the kind of drift a citation check alone would miss, since the citations themselves were valid.
 
-Recall is not measured: that needs a labelled question-to-chunk set built by reading the filings, whereas these three metrics need no ground truth.
+### Retrieval
+
+The reranker's own scores cost nothing to read back, so retrieval can be checked without any model call. Across the same eight questions, **three in four of the passages kept were found by both the dense and the sparse arm** — the remaining quarter came from one arm alone, which is what the second arm is there for.
+
+Mean reranker confidence in the passages it kept is **41%**, and that figure follows what the agent does next: 85–92% on questions it answers straight away, and near zero on the two it either rewrites its search for or declines to answer. Low confidence is the signal the loop acts on, not a defect.
+
+Recall is not measured: that needs a labelled question-to-chunk set built by reading the filings, whereas everything above needs no ground truth. So these numbers show that answers are grounded in what was retrieved — not that retrieval found everything it should have.
 
 ---
 
@@ -93,6 +113,10 @@ Recall is not measured: that needs a labelled question-to-chunk set built by rea
 * *Compare Apple and Tesla risk factors in 2024*
 * *What were the main revenue drivers?*
 * *What was Microsoft's CEO's exact favorite color in 2024?*
+* *What are Apple's risk factors in 2024?* then *what about Microsoft?*
+* *What are Apple's risk factors in 2024?* then *and 2025?*
+
+The last two are follow-ups. Clear the memory from the sidebar and ask *what about Microsoft?* on its own to see the difference — with nothing to follow up on, the agent has no year and stops to ask.
 
 ---
 
@@ -108,7 +132,8 @@ agentic-rag/
 ├── requirements.txt            # Auto-generated requirements for Streamlit Cloud
 ├── data/                       # Pre-built FAISS and DuckDB vector store
 ├── eval/
-│   └── planner_eval.py   # 20 labelled questions: extraction + clarify gate
+│   ├── planner_eval.py   # 20 labelled questions: extraction + clarify gate
+│   └── answer_eval.py    # citations, faithfulness and reranker confidence
 ├── src/
 │   ├── app.py            # Streamlit UI (Frontend)
 │   ├── config/
