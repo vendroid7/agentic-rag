@@ -300,7 +300,10 @@ def make_nodes(database: Database, retriever: HybridRetriever, llm: LLMClient):
             }
 
         passages = "\n\n".join(
-            f"[chunk {c.chunk_id}, {c.company} FY{c.fiscal_year}, {c.item_section}]\n{c.text[:500]}"
+            guardrails.fence(
+                f"chunk {c.chunk_id}, {c.company} FY{c.fiscal_year}, {c.item_section}",
+                c.text[:500],
+            )
             for c in state.contexts
         )
         searched = "\n".join(
@@ -409,11 +412,15 @@ def make_nodes(database: Database, retriever: HybridRetriever, llm: LLMClient):
 
         cited, invented = guardrails.check_citations(answer, {c.chunk_id for c in state.contexts})
         if invented:
-            trace.append(f"Guardrail: citation check failed — {sorted(invented)} were never retrieved")
+            trace.append(f"Guardrail out: citation check failed — {sorted(invented)} were never retrieved")
         elif cited == 0:
-            trace.append("Guardrail: the answer cites nothing — treat it as ungrounded")
+            trace.append("Guardrail out: the answer cites nothing — treat it as ungrounded")
         else:
-            trace.append(f"Guardrail: {cited} citation(s), all resolve to retrieved passages")
+            trace.append(f"Guardrail out: {cited} citation(s), all resolve to retrieved passages")
+
+        leaked = guardrails.inspect_output(answer)
+        if leaked:
+            trace.append(f"Guardrail out: answer carries input text back {leaked[:2]}")
 
         trace.append("Answer: Synthesized response")
         return {"final_answer": answer, "trace": trace}

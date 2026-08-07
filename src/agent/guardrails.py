@@ -63,6 +63,28 @@ def fence(label: str, body: str) -> str:
     return f"<<<PASSAGE {label}>>>\n{body}\n<<<END PASSAGE>>>"
 
 
+def inspect_output(answer: str) -> list[str]:
+    """
+    Looks for signs that the model repeated its input instead of answering from it.
+
+    Two things should never reach the user. The fence markers are ours, so seeing
+    one means the prompt itself is being echoed back. Instruction-shaped phrasing
+    in an answer means text that was meant to be read as evidence has been carried
+    through into the output.
+
+    Args:
+        answer (str): The generated answer, before it is shown to anyone.
+
+    Returns:
+        list[str]: What was found, empty when the answer looks clean.
+    """
+    found = []
+    if "<<<PASSAGE" in (answer or "") or "<<<END PASSAGE" in (answer or ""):
+        found.append("prompt markers echoed")
+    found.extend(screen(answer))
+    return found
+
+
 def check_citations(answer: str, retrieved_ids: set[int]) -> tuple[int, set[int]]:
     """
     Counts an answer's citations and finds any the retriever never returned.
