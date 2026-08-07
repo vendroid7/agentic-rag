@@ -64,6 +64,27 @@ The UI remembers the last five questions and the filing each resolved to, so fol
 
 ---
 
+## ✅ Tests
+
+The agent loop is covered by unit tests with the model, the retriever and the catalog all faked, so the whole suite runs offline in under a second and needs no API key.
+
+```bash
+uv run pytest --cov
+```
+
+```text
+69 passed in 0.23s
+src/agent/graph.py       100%
+src/agent/guardrails.py  100%
+src/agent/llm.py         100%
+src/agent/nodes.py       100%
+src/agent/state.py       100%
+```
+
+They cover what each node returns for a given state — the clarify gate's 0 / 1 / >1 branches, the retry budget forcing an answer, `refine` keeping filters where `broaden` drops them, `k` widening on each attempt, and the guardrails either side of the answer call. `tests/test_graph.py` compiles the real graph around stub nodes to check the routing itself.
+
+---
+
 ## 📊 Evaluation
 
 Twenty labelled questions covering entity extraction and the clarify gate. The gate is a deterministic DuckDB lookup, so whether it stops to ask is decided entirely by the ticker and fiscal year the planner extracted — one run therefore measures planner accuracy *and* interactivity together, with no labelled chunks and no LLM judge.
@@ -134,6 +155,7 @@ agentic-rag/
 ├── eval/
 │   ├── planner_eval.py   # 20 labelled questions: extraction + clarify gate
 │   └── answer_eval.py    # citations, faithfulness and reranker confidence
+├── tests/                # offline unit tests, no API key needed
 ├── src/
 │   ├── app.py            # Streamlit UI (Frontend)
 │   ├── config/
